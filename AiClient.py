@@ -45,6 +45,7 @@ class TcpClient:
                 if self.is_room_video_send:
                     self.tcp_socket.send(packet_header)
                     self.tcp_socket.send(img_file.read(file_size))
+                    print(f'send {file_size}')
 
     def start(self):
         self.is_stop = False
@@ -76,8 +77,8 @@ class TcpClient:
 
 
 if __name__ == "__main__":
-    # tcp_server_ip = '154.8.225.243'
-    tcp_server_ip = '127.0.0.1'
+    tcp_server_ip = '154.8.225.243'
+    # tcp_server_ip = '127.0.0.1'
     tcp_server_port = 8008
     camera_id = 1
     room_id = 1
@@ -91,7 +92,6 @@ if __name__ == "__main__":
         print('capture open')
         while True:
             ret, prev = capture.read()
-            print(f'ret: {ret}')
             if ret:
                 tcpClient.send_img(prev)
             else:
