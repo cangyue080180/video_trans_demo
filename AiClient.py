@@ -6,6 +6,30 @@ import time
 import cv2
 
 
+def udp_send_file(data_size, data):
+    max_send_len_once = 548 # 548-2 剩余2个字节用于序号使用
+    send_len = 0
+    packet_index = 0
+    while send_len<data_size:
+        if data_size>=send_len+max_send_len_once-2-1:
+            send_packet = data[send_len:send_len+max_send_len_once-2]
+        else:
+            send_packet = data[send_len:]
+        send_packet = packet_index.to_bytes(2, 'little') + send_packet
+        udp_socket.sendto(send_packet, udp_server_address)
+        send_len += max_send_len_once-2
+        packet_index += 1
+
+        delay = 2000  # 可以调节此参数来改变udp发送速率，来降低udp丢包率
+        while delay>0:
+            delay -= 1
+    print(f'send_packet_index: {packet_index}')
+
+    # 发送结束包
+    end_packet_content = 'end'
+    udp_socket.sendto(end_packet_content.encode('ascii'), udp_server_address)
+
+
 class TcpClient:
     # 每个摄像头处理线程都独享一个tcp连接
     def __init__(self, server_ip, server_port, camera_id, room_id):
@@ -43,9 +67,11 @@ class TcpClient:
             # 发送图像数据
             with open(send_file, 'rb') as img_file:
                 if self.is_room_video_send:
-                    self.tcp_socket.send(packet_header)
-                    self.tcp_socket.send(img_file.read(file_size))
-                    print(f'send {file_size}')
+                    udp_socket.sendto(packet_header,udp_server_address)
+                    # print(f'send {len(packet_header)} to {udp_server_address}')
+
+                    udp_send_file(file_size, img_file.read(file_size))
+                    # print(f'send {file_size} to {udp_server_address}')
 
     def start(self):
         self.is_stop = False
@@ -76,12 +102,18 @@ class TcpClient:
         self.tcp_socket.close()
 
 
+udp_socket = None
+# tcp_server_ip = '154.8.225.243'
+tcp_server_ip = '127.0.0.1'
+tcp_server_port = 8008
+udp_server_port = 9009
+udp_server_address = (tcp_server_ip, udp_server_port)
 if __name__ == "__main__":
-    tcp_server_ip = '154.8.225.243'
-    # tcp_server_ip = '127.0.0.1'
-    tcp_server_port = 8008
     camera_id = 1
     room_id = 1
+
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
     tcpClient = TcpClient(tcp_server_ip, tcp_server_port, camera_id, room_id)
     tcpClient.start()
 
@@ -94,9 +126,10 @@ if __name__ == "__main__":
             ret, prev = capture.read()
             if ret:
                 tcpClient.send_img(prev)
+                # udp_client.send_img(prev)
             else:
                 break
-            time.sleep(0.1)
+            time.sleep(0.040)  # 每秒发送25帧
 
     print('stop')
     tcpClient.stop()
