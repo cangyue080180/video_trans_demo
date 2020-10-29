@@ -1,12 +1,14 @@
 # use to receive and send commands of control video transmission
-from socketserver import ThreadingTCPServer, StreamRequestHandler, ThreadingUDPServer, DatagramRequestHandler, BaseRequestHandler
+from socketserver import ThreadingTCPServer, StreamRequestHandler
 import struct
 import enum
+from queue import Queue
 import threading
-import socket
 
-ai_client_list = {}
-desktop_client_list = {}
+ai_client_list = []  # use to store all connecting ai servers
+desktop_client_list = []  # use to store all the connecting desktop clients
+ai_client_packet_buffer = Queue(100)
+desktop_client_packet_buffer = Queue(10)
 
 
 class ClientType(enum.Enum):
@@ -16,6 +18,8 @@ class ClientType(enum.Enum):
 
 
 class MyStreamRequestHandler(StreamRequestHandler):
+    last_packet = b''  # use to store the last packet received from desktop client
+
     def __init__(self, request, client_address, server):
         super().__init__(request, client_address, server)
         self.client_role = ClientType.none
@@ -31,18 +35,21 @@ class MyStreamRequestHandler(StreamRequestHandler):
 
     def handle(self):
         # receive role packet
-        print(self.client_address)
         packet_role = self.__socket_receive(6)
         packet_role_type, packet_role_len, packet_role_value = struct.unpack('<BIB', packet_role)
         if packet_role_type == 0x03:  # role packet
             if packet_role_value == 0x01:  # desktop client
                 self.client_role = ClientType.desktop
-                desktop_client_list[self.client_address] = self.wfile
-                print(f"new_desktop_client_count: {len(desktop_client_list)}")
+                desktop_client_list.append(self.wfile)
+                print(f"new_desktop_client_count: {len(desktop_client_list)} from {self.client_address}")
             else:  # AI client
                 self.client_role = ClientType.ai
-                ai_client_list[self.client_address] = self.wfile
-                print(f"new_ai_client_count: {len(ai_client_list)}")
+                # send last packet to the new connect ai client,
+                # so the connecting desktop clients can auto get the video when ai server restart
+                if len(desktop_client_list) > 0:
+                    self.wfile.write(MyStreamRequestHandler.last_packet)
+                ai_client_list.append(self.wfile)
+                print(f"new_ai_client_count: {len(ai_client_list)} from {self.client_address}")
         else:
             return  # not right packet
 
@@ -55,66 +62,89 @@ class MyStreamRequestHandler(StreamRequestHandler):
                 # receive packet content
                 packet_data_content = self.__socket_receive(packet_data_len)
                 if self.client_role == ClientType.ai:
-                    for desktop_client_wfile in desktop_client_list.values():
-                        desktop_client_wfile.write(packet_data_header)
-                        desktop_client_wfile.write(packet_data_content)
-                elif self.client_role == ClientType.desktop:
-                    for ai_client_wfile in ai_client_list.values():
-                        ai_client_wfile.write(packet_data_header)
-                        ai_client_wfile.write(packet_data_content)
-            except ConnectionResetError as e:
-                print(f'ConnectionResetError: {str(e)}')
+                    ai_client_packet_buffer.put(packet_data_header+packet_data_content)
+                elif self.client_role == ClientType.desktop:  # send video control packets to ai servers
+                    MyStreamRequestHandler.last_packet = packet_data_header + packet_data_content
+                    desktop_client_packet_buffer.put(packet_data_header+packet_data_content)
+            except ConnectionResetError:
+                print('ConnectionResetError: ')
+                break  # if use break,the connection will disconnect, we don't like it
+            except BrokenPipeError:
+                print('BrokenPipeError')
+                break
+            except OSError:
+                print('OSError')
                 break
 
-    def finish(self):
-        # delete object which not live
-        if self.client_role == ClientType.ai:
-            ai_client_list.pop(self.client_address)
-            print(f"now_ai_client_count: {len(ai_client_list)}")
-        elif self.client_role == ClientType.desktop:
-            desktop_client_list.pop(self.client_address)
-            print(f"now_desktop_client_count: {len(desktop_client_list)}")
-        else:
-            None
+        try:
+            # delete object which not live
+            if self.client_role == ClientType.ai:
+                ai_client_list.remove(self.wfile)
+                print(f"now_ai_client_count: {len(ai_client_list)}")
+            elif self.client_role == ClientType.desktop:
+                desktop_client_list.remove(self.wfile)
+                print(f"now_desktop_client_count: {len(desktop_client_list)}")
+        except ValueError:
+            pass
+
+    # def finish(self):
+    #     # delete object which not live
+    #     if self.client_role == ClientType.ai:
+    #         ai_client_list.remove(self.wfile)
+    #         print(f"now_ai_client_count: {len(ai_client_list)}")
+    #     elif self.client_role == ClientType.desktop:
+    #         desktop_client_list.remove(self.wfile)
+    #         print(f"now_desktop_client_count: {len(desktop_client_list)}")
+    #     else:
+    #         None
 
 
-class MyUdpHandler(BaseRequestHandler):
-    """
-    use to receive and send video
-    receive from ai client
-    send to desktop client
-    """
-    def handle(self):
-        msg, sock = self.request
-        data = msg
-        print(f'recv_img: {len(data)} from {self.client_address}')
-        # resp = 'ok'
-        # sock.sendto(resp.encode('ascii'), self.client_address)
-        for desktop_client in desktop_client_list.keys():
-            new_udp_remote_address = (desktop_client[0], 9008)
-            udp_socket.sendto(data, new_udp_remote_address)
-            print(f'send_img: {len(data)} to {new_udp_remote_address}')
+def send_ai_packets_to_desktop():
+    while not is_stop:
+            data = ai_client_packet_buffer.get()
+            for desktop_client in desktop_client_list:  # send video packets to desktop clients
+                try:
+                    desktop_client.write(data)
+                except BrokenPipeError:
+                    remove_item(desktop_client_list, desktop_client)
+                except OSError:
+                    remove_item(desktop_client_list, desktop_client)
 
 
-def start_udp(udp_server_ip, udp_server_port):
-    udp_server = ThreadingUDPServer((udp_server_ip, udp_server_port), MyUdpHandler)
-    udp_server.serve_forever()
+def send_desktop_packets_to_ai():
+    while not is_stop:
+        data = desktop_client_packet_buffer.get()
+        for ai_client in ai_client_list:
+            try:
+                ai_client.write(data)
+            except BrokenPipeError:
+                remove_item(ai_client_list, ai_client)
+            except OSError:
+                remove_item(ai_client_list, ai_client)
 
 
-udp_socket = None # use to send packet
+def remove_item(item_list, item):
+    try:
+        item_list.remove(item)
+    except ValueError:
+        pass
+
+
+is_stop = False
 if __name__ == "__main__":
     host = ''
-    tcp_server_port = 8008
-    tcp_server_endpoint = (host, tcp_server_port)
+    port = 8008
+    server_endpoint = (host, port)
 
-    udp_port = 9009
-    bind_address = (host, udp_port)
-    udp_task = threading.Thread(target=start_udp, args=bind_address)
-    udp_task.start()
+    task1 = threading.Thread(target=send_desktop_packets_to_ai, args=())
+    task1.daemon = True
+    task1.start()
 
-    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    task2 = threading.Thread(target=send_ai_packets_to_desktop, args=())
+    task2.daemon = True
+    task2.start()
 
-    tcp_server = ThreadingTCPServer(tcp_server_endpoint, MyStreamRequestHandler)
-    tcp_server.serve_forever()
+    server = ThreadingTCPServer(server_endpoint, MyStreamRequestHandler)
+    server.serve_forever()
 
-    print('server stop')
+    is_stop = True
