@@ -2,9 +2,9 @@ import socket
 import struct
 import cv2
 import threading
+import numpy
 
 dest_ip = '127.0.0.1'
-# dest_ip = '154.8.225.243'
 dest_port = 8008
 recv_file = 'recv.jpg'
 
@@ -40,12 +40,11 @@ def main():
             if packet_video_type == 2:
                 video_image_bytes = socket_recv(tcp_socket, packet_video_len-4)
                 print(f'recv_img_len: {len(video_image_bytes)}')
-                with open(recv_file, 'wb') as recv_img_file:
-                    recv_img_file.write(video_image_bytes)
-                    recv_img_file.flush()
-                    recv_img = cv2.imread(recv_file)
-                    cv2.imshow(str(camera_id), recv_img)
-                    cv2.waitKey(20)
+                data = numpy.frombuffer(video_image_bytes, numpy.uint8)
+                decode_img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+                cv2.imshow(str(camera_id), decode_img)
+                cv2.waitKey(10)
         except KeyboardInterrupt:
             break
         except ConnectionError:
