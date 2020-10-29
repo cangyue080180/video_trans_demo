@@ -4,6 +4,7 @@ import struct
 from threading import Thread
 import time
 import cv2
+import numpy
 
 
 class TcpClient:
@@ -13,6 +14,8 @@ class TcpClient:
         self.tcp_server_port = server_port
         self.camera_id = camera_id
         self.room_id = room_id
+        # 压缩参数，后面cv2.imencode将会用到，对于jpeg来说，15代表图像质量，越高代表图像质量越好为 0-100，默认95
+        self.encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 30]
 
         self.is_stop = True
         self.is_room_video_send = False
@@ -39,24 +42,26 @@ class TcpClient:
     def send_img(self, img):
         # TODO:可考虑是否需要另起一个线程进行发送来提高性能
         if self.is_room_video_send and not self.is_stop:
+            result, imgencode = cv2.imencode('.jpg', img, self.encode_param)
+            data = numpy.array(imgencode)
+            send_file = data.tostring()
             # 图片压缩为jpg格式，节省传输数据量
             # prev = cv2.resize(prev, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_NEAREST)
-            send_file = str(self.camera_id) + '.jpg'
-            cv2.imwrite(send_file, img)
+            # send_file = str(self.camera_id) + '.jpg'
+            # cv2.imwrite(send_file, img)
 
             # 发送图像数据包头
-            file_size = os.path.getsize(send_file)
+            file_size = len(send_file)
             packet_header = struct.pack('<BII', 2, file_size + 4, self.camera_id)
 
             # 发送图像数据
-            with open(send_file, 'rb') as img_file:
-                if self.is_room_video_send:
-                    try:
-                        self.tcp_socket.send(packet_header)
-                        self.tcp_socket.send(img_file.read(file_size))
-                        print(f'send {file_size}')
-                    except OSError as e:
-                        print(f'send_img_with_exception: {str(e)}')
+            if self.is_room_video_send:
+                try:
+                    self.tcp_socket.send(packet_header)
+                    self.tcp_socket.send(send_file)
+                    print(f'send {file_size}')
+                except OSError as e:
+                    print(f'send_img_with_exception: {str(e)}')
 
     def start(self):
         self.is_stop = False
@@ -103,7 +108,6 @@ class TcpClient:
 
 
 if __name__ == "__main__":
-    # tcp_server_ip = '154.8.225.243'
     tcp_server_ip = '127.0.0.1'
     tcp_server_port = 8008
     camera_id = 1
@@ -113,13 +117,14 @@ if __name__ == "__main__":
 
     print('start capture')
     # 读取视频
-    capture = cv2.VideoCapture("test.mp4")
+    capture = cv2.VideoCapture("http://ivi.bupt.edu.cn/hls/cctv5phd.m3u8")
+    # capture = cv2.VideoCapture("test.mp4")
     if capture.isOpened():
         print('capture open')
         while True:
             try:
                 ret, prev = capture.read()
-                # prev = cv2.resize(prev, (420, 200), interpolation=cv2.INTER_NEAREST)
+                # prev = cv2.resize(prev, (472, 250), interpolation=cv2.INTER_NEAREST)
                 if ret:
                     tcpClient.send_img(prev)
                 else:
