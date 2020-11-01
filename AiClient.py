@@ -44,7 +44,7 @@ class TcpClient:
         if self.is_room_video_send and not self.is_stop:
             result, imgencode = cv2.imencode('.jpg', img, self.encode_param)
             data = numpy.array(imgencode)
-            send_file = data.tostring()
+            send_file = data.tobytes()
             # 图片压缩为jpg格式，节省传输数据量
             # prev = cv2.resize(prev, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_NEAREST)
             # send_file = str(self.camera_id) + '.jpg'

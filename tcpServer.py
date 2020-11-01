@@ -4,6 +4,7 @@ import struct
 import enum
 from queue import Queue
 import threading
+import datetime
 
 ai_client_list = []  # use to store all connecting ai servers
 desktop_client_list = []  # use to store all the connecting desktop clients
@@ -15,6 +16,10 @@ class ClientType(enum.Enum):
     none = 0,
     desktop = 1,
     ai = 2
+
+
+def get_time_now():
+    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
 class MyStreamRequestHandler(StreamRequestHandler):
@@ -41,7 +46,7 @@ class MyStreamRequestHandler(StreamRequestHandler):
             if packet_role_value == 0x01:  # desktop client
                 self.client_role = ClientType.desktop
                 desktop_client_list.append(self.wfile)
-                print(f"new_desktop_client_count: {len(desktop_client_list)} from {self.client_address}")
+                print(f"{get_time_now()} new_desktop_client from {self.client_address}")
             else:  # AI client
                 self.client_role = ClientType.ai
                 # send last packet to the new connect ai client,
@@ -49,7 +54,7 @@ class MyStreamRequestHandler(StreamRequestHandler):
                 if len(desktop_client_list) > 0:
                     self.wfile.write(MyStreamRequestHandler.last_packet)
                 ai_client_list.append(self.wfile)
-                print(f"new_ai_client_count: {len(ai_client_list)} from {self.client_address}")
+                print(f"{get_time_now()} new_ai_client from {self.client_address}")
         else:
             return  # not right packet
 
@@ -67,36 +72,22 @@ class MyStreamRequestHandler(StreamRequestHandler):
                     MyStreamRequestHandler.last_packet = packet_data_header + packet_data_content
                     desktop_client_packet_buffer.put(packet_data_header+packet_data_content)
             except ConnectionResetError:
-                print('ConnectionResetError: ')
                 break  # if use break,the connection will disconnect, we don't like it
             except BrokenPipeError:
-                print('BrokenPipeError')
                 break
             except OSError:
-                print('OSError')
                 break
 
         try:
             # delete object which not live
             if self.client_role == ClientType.ai:
                 ai_client_list.remove(self.wfile)
-                print(f"now_ai_client_count: {len(ai_client_list)}")
+                print(f"{get_time_now()} ai_client_disconnect at {self.client_address} now_count: {len(ai_client_list)}")
             elif self.client_role == ClientType.desktop:
                 desktop_client_list.remove(self.wfile)
-                print(f"now_desktop_client_count: {len(desktop_client_list)}")
+                print(f"{get_time_now()} desktop_client_disconnect at {self.client_address} now_count: {len(desktop_client_list)}")
         except ValueError:
             pass
-
-    # def finish(self):
-    #     # delete object which not live
-    #     if self.client_role == ClientType.ai:
-    #         ai_client_list.remove(self.wfile)
-    #         print(f"now_ai_client_count: {len(ai_client_list)}")
-    #     elif self.client_role == ClientType.desktop:
-    #         desktop_client_list.remove(self.wfile)
-    #         print(f"now_desktop_client_count: {len(desktop_client_list)}")
-    #     else:
-    #         None
 
 
 def send_ai_packets_to_desktop():
