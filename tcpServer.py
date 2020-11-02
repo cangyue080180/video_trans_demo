@@ -72,10 +72,14 @@ class MyStreamRequestHandler(StreamRequestHandler):
                     MyStreamRequestHandler.last_packet = packet_data_header + packet_data_content
                     desktop_client_packet_buffer.put(packet_data_header+packet_data_content)
             except ConnectionResetError:
-                break  # if use break,the connection will disconnect, we don't like it
+                break
             except BrokenPipeError:
                 break
             except OSError:
+                break
+            except MemoryError:
+                break
+            except Exception:
                 break
 
         try:
