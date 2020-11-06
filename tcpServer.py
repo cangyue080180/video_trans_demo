@@ -40,7 +40,10 @@ class MyStreamRequestHandler(StreamRequestHandler):
 
     def handle(self):
         # receive role packet
-        packet_role = self.__socket_receive(6)
+        try:
+            packet_role = self.__socket_receive(6)
+        except ConnectionResetError:
+            return
         packet_role_type, packet_role_len, packet_role_value = struct.unpack('<BIB', packet_role)
         if packet_role_type == 0x03:  # role packet
             if packet_role_value == 0x01:  # desktop client
