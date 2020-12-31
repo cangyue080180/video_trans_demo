@@ -52,8 +52,8 @@ def main():
     cv2.destroyAllWindows()
 
     # 发送关闭图像命令
-    packet_stop = struct.pack('<BIIB', 1, 5, 1, 0)
-    tcp_socket.send(packet_stop)
+    # packet_stop = struct.pack('<BIIB', 1, 5, 1, 0)
+    # tcp_socket.send(packet_stop)
 
     tcp_socket.close()
 

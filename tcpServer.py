@@ -7,7 +7,7 @@ import threading
 import datetime
 
 ai_client_list = []  # use to store all connecting ai servers
-desktop_client_list = []  # use to store all the connecting desktop clients
+desktop_client_list = {}  # use to store all the connecting desktop clients
 ai_client_packet_buffer = Queue(100)
 desktop_client_packet_buffer = Queue(10)
 
@@ -48,7 +48,7 @@ class MyStreamRequestHandler(StreamRequestHandler):
         if packet_role_type == 0x03:  # role packet
             if packet_role_value == 0x01:  # desktop client
                 self.client_role = ClientType.desktop
-                desktop_client_list.append(self.wfile)
+                desktop_client_list[self.wfile] = None
                 print(f"{get_time_now()} new_desktop_client from {self.client_address}")
             else:  # AI client
                 self.client_role = ClientType.ai
@@ -74,6 +74,11 @@ class MyStreamRequestHandler(StreamRequestHandler):
                 elif self.client_role == ClientType.desktop:  # send video control packets to ai servers
                     MyStreamRequestHandler.last_packet = packet_data_header + packet_data_content
                     desktop_client_packet_buffer.put(packet_data_header+packet_data_content)
+
+                    if packet_data_type == 1:
+                        room_num,control_cmd = struct.unpack('<IB',packet_data_content)
+                        # store the close send img command to the value
+                        desktop_client_list[self.wfile] = struct.pack('<BIIB', packet_data_type, packet_data_len, room_num, 0)
             except ConnectionResetError:
                 break
             except BrokenPipeError:
@@ -91,8 +96,12 @@ class MyStreamRequestHandler(StreamRequestHandler):
                 ai_client_list.remove(self.wfile)
                 print(f"{get_time_now()} ai_client_disconnect at {self.client_address} now_count: {len(ai_client_list)}")
             elif self.client_role == ClientType.desktop:
-                desktop_client_list.remove(self.wfile)
+                if not desktop_client_list[self.wfile] is None:
+                    desktop_client_packet_buffer.put(desktop_client_list[self.wfile])  # send close send_img_command
+
+                del desktop_client_list[self.wfile]
                 print(f"{get_time_now()} desktop_client_disconnect at {self.client_address} now_count: {len(desktop_client_list)}")
+
         except ValueError:
             pass
 
@@ -123,7 +132,14 @@ def send_desktop_packets_to_ai():
 
 def remove_item(item_list, item):
     try:
-        item_list.remove(item)
+        if isinstance(item_list,list):
+            item_list.remove(item)
+        elif isinstance(item_list, dict):
+            if not item_list[item] is None:
+                desktop_client_packet_buffer.put(item_list[item])  # send close send_img_command
+
+            del item_list[item]
+            print(f"{get_time_now()} desktop_client_disconnect, now_count: {len(desktop_client_list)}")
     except ValueError:
         pass
 
