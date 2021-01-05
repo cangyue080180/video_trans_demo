@@ -103,7 +103,7 @@ class MyStreamRequestHandler(StreamRequestHandler):
                 print(f"{get_time_now()} desktop_client_disconnect at {self.client_address} now_count: {len(desktop_client_list)}")
 
         except ValueError:
-            pass
+            print(f"{get_time_now()} delete fail,desktopClientCount: {len(desktop_client_list)} ,aiCount:{len(ai_client_list)}")
 
 
 def send_ai_packets_to_desktop():
@@ -134,6 +134,7 @@ def remove_item(item_list, item):
     try:
         if isinstance(item_list,list):
             item_list.remove(item)
+            print(f"{get_time_now()} ai_client_disconnect, now_count: {len(ai_client_list)}")
         elif isinstance(item_list, dict):
             if not item_list[item] is None:
                 desktop_client_packet_buffer.put(item_list[item])  # send close send_img_command
@@ -141,7 +142,7 @@ def remove_item(item_list, item):
             del item_list[item]
             print(f"{get_time_now()} desktop_client_disconnect, now_count: {len(desktop_client_list)}")
     except ValueError:
-        pass
+        print(f"{get_time_now()} remove_item fail,desktopClientCount: {len(desktop_client_list)} ,aiCount:{len(ai_client_list)}")
 
 
 is_stop = False
