@@ -51,9 +51,9 @@ def main():
             break
     cv2.destroyAllWindows()
 
-    # 发送关闭图像命令
-    # packet_stop = struct.pack('<BIIB', 1, 5, 1, 0)
-    # tcp_socket.send(packet_stop)
+    # 发送注销角色数据包
+    packet_exit = struct.pack('<BIB', 4, 1, 1)
+    tcp_socket.send(packet_exit)
 
     tcp_socket.close()
 

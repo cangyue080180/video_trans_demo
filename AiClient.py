@@ -76,6 +76,9 @@ class TcpClient:
 
     def stop(self):
         self.is_stop = True
+        # 发送注销角色数据包
+        packet_exit = struct.pack('<BIB', 4, 1, 2)
+        self.tcp_socket.send(packet_exit)
 
     def __receive(self):
         # 等待接收图像传输命令
@@ -102,11 +105,12 @@ class TcpClient:
                 self.tcp_socket.close()
             except ConnectionError:
                 print('close last socket with exception')
-            self.reconnection()
+            if not self.is_stop:
+                self.reconnection()
         else:
             self.tcp_socket.close()
 
-
+is_stop = False
 if __name__ == "__main__":
     tcp_server_ip = '127.0.0.1'
     tcp_server_port = 8008
