@@ -69,16 +69,19 @@ class MyStreamRequestHandler(StreamRequestHandler):
                 packet_data_type, packet_data_len = struct.unpack('<BI', packet_data_header)
                 # receive packet content
                 packet_data_content = self.__socket_receive(packet_data_len)
-                if self.client_role == ClientType.ai:
-                    ai_client_packet_buffer.put(packet_data_header+packet_data_content)
-                elif self.client_role == ClientType.desktop:  # send video control packets to ai servers
-                    MyStreamRequestHandler.last_packet = packet_data_header + packet_data_content
-                    desktop_client_packet_buffer.put(packet_data_header+packet_data_content)
+                if packet_data_type == 0x04:  # exit packet
+                    break
+                else:
+                    if self.client_role == ClientType.ai:
+                        ai_client_packet_buffer.put(packet_data_header+packet_data_content)
+                    elif self.client_role == ClientType.desktop:  # send video control packets to ai servers
+                        MyStreamRequestHandler.last_packet = packet_data_header + packet_data_content
+                        desktop_client_packet_buffer.put(packet_data_header+packet_data_content)
 
-                    if packet_data_type == 1:
-                        room_num,control_cmd = struct.unpack('<IB',packet_data_content)
-                        # store the close send img command to the value
-                        desktop_client_list[self.wfile] = struct.pack('<BIIB', packet_data_type, packet_data_len, room_num, 0)
+                        if packet_data_type == 1:
+                            room_num,control_cmd = struct.unpack('<IB',packet_data_content)
+                            # store the close send img command to the value
+                            desktop_client_list[self.wfile] = struct.pack('<BIIB', packet_data_type, packet_data_len, room_num, 0)
             except ConnectionResetError:
                 break
             except BrokenPipeError:
